@@ -75,7 +75,7 @@ class PizzaAnimada(tk.Canvas):
 
 class AppAggiornaClienti:
 
-    COLONNA_ID = "ID"
+    COLONNA_ID = "Idusuario"
 
     def __init__(self, root):
         self.root = root
@@ -129,8 +129,8 @@ class AppAggiornaClienti:
         self.btn_actualizar.pack(side="left", padx=8)
 
         self.btn_descargar = tk.Button(
-            btn_frame, text="Descargar al Escritorio", width=22, padx=10, pady=6,
-            font=("Segoe UI", 11), fg="#000000", state="disabled", command=self._guardar_escritorio
+            btn_frame, text="Guardar Archivo", width=22, padx=10, pady=6,
+            font=("Segoe UI", 11), fg="#000000", state="disabled", command=self._guardar_archivo
         )
         self.btn_descargar.pack(side="left", padx=8)
 
@@ -202,13 +202,13 @@ class AppAggiornaClienti:
                 f"Duplicados descartados: {duplicados}\n"
                 f"Nuevos agregados: {len(df_agregar)}\n"
                 f"Total final: {len(df_resultado)}\n\n"
-                f"Pulsa 'Descargar al Escritorio' para guardar."
+                f"Pulsa 'Guardar Archivo' para guardar."
             )
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def _guardar_escritorio(self):
+    def _guardar_archivo(self):
         if not self.file_output or not os.path.exists(self.file_output):
             messagebox.showerror("Error", "No hay archivo para guardar. Ejecuta primero la actualizacion.")
             return
@@ -222,23 +222,22 @@ class AppAggiornaClienti:
         self.root.after(2000, self._hacer_descarga)
 
     def _hacer_descarga(self):
-        escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
-        if not os.path.isdir(escritorio):
-            escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
-        if not os.path.isdir(escritorio):
-            escritorio = os.path.expanduser("~")
-
         hoy = datetime.now().strftime("%Y-%m-%d")
-        dest = os.path.join(escritorio, f"archivo_actualizado_{hoy}.xlsx")
+        default_name = f"archivo_actualizado_{hoy}.xlsx"
 
-        n = 1
-        while os.path.exists(dest):
-            dest = os.path.join(escritorio, f"archivo_actualizado_{hoy}_{n}.xlsx")
-            n += 1
+        dest = filedialog.asksaveasfilename(
+            title="Guardar archivo actualizado",
+            defaultextension=".xlsx",
+            initialfile=default_name,
+            filetypes=[("Archivos Excel", "*.xlsx")]
+        )
+
+        if not dest:
+            return
 
         try:
             shutil.copy2(self.file_output, dest)
-            messagebox.showinfo("Guardado", f"Archivo guardado en el Escritorio:\n{os.path.basename(dest)}")
+            messagebox.showinfo("Guardado", f"Archivo guardado correctamente:\n{os.path.basename(dest)}")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar:\n{str(e)}")
 
