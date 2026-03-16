@@ -8,7 +8,69 @@ import pandas as pd
 from datetime import datetime
 import os
 import shutil
+import math
 
+
+class PizzaAnimada(tk.Canvas):
+    """Pizza margherita fumante animada."""
+
+    def __init__(self, parent, size=80, **kwargs):
+        super().__init__(parent, width=size, height=size + 20, highlightthickness=0, **kwargs)
+        self.size = size
+        self.fase = 0.0
+        self.animando = False
+
+    def iniciar(self):
+        self.animando = True
+        self._animar()
+
+    def detener(self):
+        self.animando = False
+
+    def _animar(self):
+        if not self.animando:
+            return
+        self.delete("all")
+        cx = self.size // 2
+        cy = self.size // 2 + 18
+        r = self.size // 2 - 4
+
+        # Plato
+        self.create_oval(cx - r - 4, cy - r // 3 - 2, cx + r + 4, cy + r // 3 + 8, fill="#d4d4d4", outline="#bbb")
+
+        # Base pizza (vista dall'alto, ovale per prospettiva)
+        self.create_oval(cx - r, cy - r // 2, cx + r, cy + r // 2, fill="#e8a838", outline="#c4872a", width=2)
+
+        # Salsa pomodoro
+        self.create_oval(cx - r + 8, cy - r // 2 + 6, cx + r - 8, cy + r // 2 - 6, fill="#d63a2a", outline="")
+
+        # Mozzarella (chiazze bianche)
+        manchas = [(-14, -6), (10, -4), (-4, 4), (16, 2), (-18, 2), (6, -10), (-8, -12)]
+        for mx, my in manchas:
+            self.create_oval(cx + mx - 5, cy + my - 3, cx + mx + 5, cy + my + 3, fill="#fff8e1", outline="")
+
+        # Basilico (foglioline verdi)
+        hojas = [(-10, -2), (8, 4), (0, -8), (14, -4), (-6, 6)]
+        for hx, hy in hojas:
+            self.create_oval(cx + hx - 3, cy + hy - 2, cx + hx + 3, cy + hy + 2, fill="#2e7d32", outline="")
+
+        # Vapore animado (3 fili di fumo)
+        for i, offset_x in enumerate([-12, 0, 12]):
+            fase_i = self.fase + i * 1.2
+            for j in range(3):
+                y_pos = cy - r // 2 - 8 - j * 8
+                x_wave = math.sin(fase_i + j * 0.8) * 4
+                alpha_sim = max(0.2, 1.0 - j * 0.35)
+                gray = int(180 + (1 - alpha_sim) * 75)
+                color = f"#{gray:02x}{gray:02x}{gray:02x}"
+                self.create_line(
+                    cx + offset_x + x_wave, y_pos + 4,
+                    cx + offset_x - x_wave * 0.5, y_pos - 4,
+                    fill=color, width=2, smooth=True
+                )
+
+        self.fase += 0.12
+        self.after(60, self._animar)
 
 
 class AppAggiornaClienti:
@@ -18,7 +80,7 @@ class AppAggiornaClienti:
     def __init__(self, root):
         self.root = root
         self.root.title("Archivos Actualizados Automaticamente")
-        self.root.geometry("600x400")
+        self.root.geometry("600x420")
         self.root.resizable(False, False)
 
         self.file_vecchio = tk.StringVar(value="Ningun archivo seleccionado")
@@ -72,6 +134,25 @@ class AppAggiornaClienti:
         )
         self.btn_descargar.pack(side="left", padx=8)
 
+        # Pizza frame (oculto hasta despues del merge)
+        self.pizza_frame = tk.Frame(self.root)
+        self.pizza_frame.pack(fill="x", padx=20, pady=(4, 10), side="bottom")
+
+        self.pizza = PizzaAnimada(
+            self.pizza_frame, size=80,
+            bg=self.root.cget("bg")
+        )
+        self.pizza.pack(side="left", padx=(10, 10))
+
+        self.lbl_pizza = tk.Label(
+            self.pizza_frame,
+            text="Ahora puedes invitarme\na una pizza margherita!",
+            font=("Segoe UI", 11, "italic"), fg="#c44a1a",
+            justify="left"
+        )
+        self.lbl_pizza.pack(side="left", padx=(4, 0))
+
+        self.pizza_frame.pack_forget()
 
     def _elegir_archivo(self, var):
         path = filedialog.askopenfilename(
@@ -132,6 +213,15 @@ class AppAggiornaClienti:
             messagebox.showerror("Error", "No hay archivo para guardar. Ejecuta primero la actualizacion.")
             return
 
+        # Mostrar pizza animada
+        self.pizza_frame.pack(fill="x", padx=20, pady=(4, 10), side="bottom")
+        self.pizza.iniciar()
+        self.root.update()
+
+        # Esperar 2 segundos para que se vea la pizza, luego guardar
+        self.root.after(2000, self._hacer_descarga)
+
+    def _hacer_descarga(self):
         escritorio = os.path.join(os.path.expanduser("~"), "Desktop")
         if not os.path.isdir(escritorio):
             escritorio = os.path.join(os.path.expanduser("~"), "Escritorio")
