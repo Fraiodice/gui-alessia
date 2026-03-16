@@ -5,14 +5,16 @@ Archivos Actualizados Automaticamente
 import tkinter as tk
 from tkinter import filedialog, messagebox
 import pandas as pd
+from openpyxl import load_workbook
+from openpyxl.styles import PatternFill, Font
 from datetime import datetime
 import os
 import shutil
 import math
+import subprocess
 
 
 class PizzaAnimada(tk.Canvas):
-    """Pizza margherita fumante animada."""
 
     def __init__(self, parent, size=80, **kwargs):
         super().__init__(parent, width=size, height=size + 20, highlightthickness=0, **kwargs)
@@ -26,6 +28,7 @@ class PizzaAnimada(tk.Canvas):
 
     def detener(self):
         self.animando = False
+        self.delete("all")
 
     def _animar(self):
         if not self.animando:
@@ -35,165 +38,174 @@ class PizzaAnimada(tk.Canvas):
         cy = self.size // 2 + 18
         r = self.size // 2 - 4
 
-        # Plato
-        self.create_oval(cx - r - 4, cy - r // 3 - 2, cx + r + 4, cy + r // 3 + 8, fill="#d4d4d4", outline="#bbb")
+        self.create_oval(cx - r - 4, cy - r // 3 - 2, cx + r + 4, cy + r // 3 + 8,
+                         fill="#d4d4d4", outline="#bbb")
+        self.create_oval(cx - r, cy - r // 2, cx + r, cy + r // 2,
+                         fill="#e8a838", outline="#c4872a", width=2)
+        self.create_oval(cx - r + 8, cy - r // 2 + 6, cx + r - 8, cy + r // 2 - 6,
+                         fill="#d63a2a", outline="")
 
-        # Base pizza (vista dall'alto, ovale per prospettiva)
-        self.create_oval(cx - r, cy - r // 2, cx + r, cy + r // 2, fill="#e8a838", outline="#c4872a", width=2)
+        for mx, my in [(-14, -6), (10, -4), (-4, 4), (16, 2), (-18, 2), (6, -10), (-8, -12)]:
+            self.create_oval(cx + mx - 5, cy + my - 3, cx + mx + 5, cy + my + 3,
+                             fill="#fff8e1", outline="")
 
-        # Salsa pomodoro
-        self.create_oval(cx - r + 8, cy - r // 2 + 6, cx + r - 8, cy + r // 2 - 6, fill="#d63a2a", outline="")
+        for hx, hy in [(-10, -2), (8, 4), (0, -8), (14, -4), (-6, 6)]:
+            self.create_oval(cx + hx - 3, cy + hy - 2, cx + hx + 3, cy + hy + 2,
+                             fill="#2e7d32", outline="")
 
-        # Mozzarella (chiazze bianche)
-        manchas = [(-14, -6), (10, -4), (-4, 4), (16, 2), (-18, 2), (6, -10), (-8, -12)]
-        for mx, my in manchas:
-            self.create_oval(cx + mx - 5, cy + my - 3, cx + mx + 5, cy + my + 3, fill="#fff8e1", outline="")
-
-        # Basilico (foglioline verdi)
-        hojas = [(-10, -2), (8, 4), (0, -8), (14, -4), (-6, 6)]
-        for hx, hy in hojas:
-            self.create_oval(cx + hx - 3, cy + hy - 2, cx + hx + 3, cy + hy + 2, fill="#2e7d32", outline="")
-
-        # Vapore animado (3 fili di fumo)
         for i, offset_x in enumerate([-12, 0, 12]):
             fase_i = self.fase + i * 1.2
             for j in range(3):
                 y_pos = cy - r // 2 - 8 - j * 8
                 x_wave = math.sin(fase_i + j * 0.8) * 4
-                alpha_sim = max(0.2, 1.0 - j * 0.35)
-                gray = int(180 + (1 - alpha_sim) * 75)
-                color = f"#{gray:02x}{gray:02x}{gray:02x}"
+                gray = int(180 + (1 - max(0.2, 1.0 - j * 0.35)) * 75)
                 self.create_line(
                     cx + offset_x + x_wave, y_pos + 4,
                     cx + offset_x - x_wave * 0.5, y_pos - 4,
-                    fill=color, width=2, smooth=True
-                )
+                    fill=f"#{gray:02x}{gray:02x}{gray:02x}", width=2, smooth=True)
 
         self.fase += 0.12
         self.after(60, self._animar)
 
 
-class AppAggiornaClienti:
+class App:
 
     COLONNA_ID = "Idusuario"
 
     def __init__(self, root):
         self.root = root
         self.root.title("Archivos Actualizados Automaticamente")
-        self.root.geometry("600x420")
+        self.root.geometry("620x440")
         self.root.resizable(False, False)
 
-        self.file_vecchio = tk.StringVar(value="Ningun archivo seleccionado")
+        self.file_viejo = tk.StringVar(value="Ningun archivo seleccionado")
         self.file_nuevo = tk.StringVar(value="Ningun archivo seleccionado")
         self.file_output = None
+        self.ultimo_destino = None
 
         self._build_ui()
 
     def _build_ui(self):
-        # Titulo
         tk.Label(
             self.root, text="Archivos Actualizados Automaticamente",
             font=("Segoe UI", 14, "bold")
         ).pack(pady=(16, 10))
 
-        tk.Frame(self.root, height=1, bg="#c0c0c0").pack(fill="x", padx=14)
+        tk.Frame(self.root, height=1, bg="#c0c0c0").pack(fill="x", padx=16)
 
         # Archivo Viejo
-        frame1 = tk.LabelFrame(self.root, text="Archivo Viejo", font=("Segoe UI", 10), padx=10, pady=10)
-        frame1.pack(fill="x", padx=14, pady=6)
-
-        row1 = tk.Frame(frame1)
-        row1.pack(fill="x")
-        tk.Label(row1, textvariable=self.file_vecchio, font=("Segoe UI", 9), fg="#444", anchor="w").pack(side="left", fill="x", expand=True)
-        tk.Button(row1, text="Buscar...", width=12, font=("Segoe UI", 9), fg="#000000", command=lambda: self._elegir_archivo(self.file_vecchio)).pack(side="right", padx=(8, 0))
+        f1 = tk.LabelFrame(self.root, text="Archivo Viejo", font=("Segoe UI", 10), padx=10, pady=10)
+        f1.pack(fill="x", padx=16, pady=6)
+        r1 = tk.Frame(f1)
+        r1.pack(fill="x")
+        tk.Label(r1, textvariable=self.file_viejo, font=("Segoe UI", 9), fg="#444",
+                 anchor="w").pack(side="left", fill="x", expand=True)
+        tk.Button(r1, text="Buscar...", width=12, font=("Segoe UI", 9), fg="#000000",
+                  command=lambda: self._elegir(self.file_viejo)).pack(side="right", padx=(8, 0))
 
         # Archivo Nuevo
-        frame2 = tk.LabelFrame(self.root, text="Archivo Nuevo", font=("Segoe UI", 10), padx=10, pady=10)
-        frame2.pack(fill="x", padx=14, pady=6)
+        f2 = tk.LabelFrame(self.root, text="Archivo Nuevo", font=("Segoe UI", 10), padx=10, pady=10)
+        f2.pack(fill="x", padx=16, pady=6)
+        r2 = tk.Frame(f2)
+        r2.pack(fill="x")
+        tk.Label(r2, textvariable=self.file_nuevo, font=("Segoe UI", 9), fg="#444",
+                 anchor="w").pack(side="left", fill="x", expand=True)
+        tk.Button(r2, text="Buscar...", width=12, font=("Segoe UI", 9), fg="#000000",
+                  command=lambda: self._elegir(self.file_nuevo)).pack(side="right", padx=(8, 0))
 
-        row2 = tk.Frame(frame2)
-        row2.pack(fill="x")
-        tk.Label(row2, textvariable=self.file_nuevo, font=("Segoe UI", 9), fg="#444", anchor="w").pack(side="left", fill="x", expand=True)
-        tk.Button(row2, text="Buscar...", width=12, font=("Segoe UI", 9), fg="#000000", command=lambda: self._elegir_archivo(self.file_nuevo)).pack(side="right", padx=(8, 0))
-
-        tk.Frame(self.root, height=1, bg="#c0c0c0").pack(fill="x", padx=14, pady=(10, 0))
+        tk.Frame(self.root, height=1, bg="#c0c0c0").pack(fill="x", padx=16, pady=(10, 0))
 
         # Botones
-        btn_frame = tk.Frame(self.root)
-        btn_frame.pack(pady=14)
+        bf = tk.Frame(self.root)
+        bf.pack(pady=14)
 
         self.btn_actualizar = tk.Button(
-            btn_frame, text="Actualizar Archivo", width=22, padx=10, pady=6,
-            font=("Segoe UI", 11), fg="#000000", command=self._ejecutar_merge
-        )
+            bf, text="Actualizar Archivo", width=22, padx=10, pady=6,
+            font=("Segoe UI", 11), fg="#000000", command=self._ejecutar_merge)
         self.btn_actualizar.pack(side="left", padx=8)
 
-        self.btn_descargar = tk.Button(
-            btn_frame, text="Guardar Archivo", width=22, padx=10, pady=6,
-            font=("Segoe UI", 11), fg="#000000", state="disabled", command=self._guardar_archivo
-        )
-        self.btn_descargar.pack(side="left", padx=8)
+        self.btn_guardar = tk.Button(
+            bf, text="Guardar Archivo", width=22, padx=10, pady=6,
+            font=("Segoe UI", 11), fg="#000000", state="disabled", command=self._guardar)
+        self.btn_guardar.pack(side="left", padx=8)
 
-        # Pizza frame (oculto hasta despues del merge)
+        # Pizza (oculta)
         self.pizza_frame = tk.Frame(self.root)
-        self.pizza_frame.pack(fill="x", padx=20, pady=(4, 10), side="bottom")
 
-        self.pizza = PizzaAnimada(
-            self.pizza_frame, size=80,
-            bg=self.root.cget("bg")
-        )
+        self.pizza = PizzaAnimada(self.pizza_frame, size=80, bg=self.root.cget("bg"))
         self.pizza.pack(side="left", padx=(10, 10))
 
         self.lbl_pizza = tk.Label(
             self.pizza_frame,
             text="Ahora puedes invitarme\na una pizza margherita!",
-            font=("Segoe UI", 11, "italic"), fg="#c44a1a",
-            justify="left"
-        )
+            font=("Segoe UI", 11, "italic"), fg="#c44a1a", justify="left")
         self.lbl_pizza.pack(side="left", padx=(4, 0))
 
-        self.pizza_frame.pack_forget()
+    # --- Logica ---
 
-    def _elegir_archivo(self, var):
+    def _elegir(self, var):
         path = filedialog.askopenfilename(
             title="Seleccionar archivo Excel",
-            filetypes=[("Archivos Excel", "*.xlsx *.xls"), ("Todos los archivos", "*.*")]
-        )
+            filetypes=[("Archivos Excel", "*.xlsx *.xls"), ("Todos", "*.*")])
         if path:
             var.set(path)
 
     def _ejecutar_merge(self):
-        f_viejo = self.file_vecchio.get()
-        f_nuevo = self.file_nuevo.get()
+        fv = self.file_viejo.get()
+        fn = self.file_nuevo.get()
 
-        if "Ningun archivo" in f_viejo or "Ningun archivo" in f_nuevo:
+        if "Ningun archivo" in fv or "Ningun archivo" in fn:
             messagebox.showwarning("Atencion", "Selecciona ambos archivos antes de continuar.")
             return
 
+        # Ocultar pizza si estaba visible de un uso anterior
+        self.pizza.detener()
+        self.pizza_frame.pack_forget()
+
         try:
-            df_viejo = pd.read_excel(f_viejo, dtype={self.COLONNA_ID: str})
-            df_nuevo = pd.read_excel(f_nuevo, dtype={self.COLONNA_ID: str})
+            df_viejo = pd.read_excel(fv, dtype={self.COLONNA_ID: str})
+            df_nuevo = pd.read_excel(fn, dtype={self.COLONNA_ID: str})
 
             for etiqueta, df in [("viejo", df_viejo), ("nuevo", df_nuevo)]:
                 if self.COLONNA_ID not in df.columns:
+                    cols = ", ".join(df.columns.tolist()[:15])
+                    if len(df.columns) > 15:
+                        cols += f"... ({len(df.columns)} columnas en total)"
                     messagebox.showerror(
                         "Error",
-                        f"Columna '{self.COLONNA_ID}' no encontrada en el archivo {etiqueta}.\n\nColumnas disponibles: {', '.join(df.columns)}"
-                    )
+                        f"Columna '{self.COLONNA_ID}' no encontrada "
+                        f"en el archivo {etiqueta}.\n\nColumnas: {cols}")
                     return
 
             ids_existentes = set(df_viejo[self.COLONNA_ID].astype(str))
-            mask = ~df_nuevo[self.COLONNA_ID].astype(str).isin(ids_existentes)
-            df_agregar = df_nuevo[mask]
-            duplicados = mask.eq(False).sum()
+            mask_nuevos = ~df_nuevo[self.COLONNA_ID].astype(str).isin(ids_existentes)
+            df_agregar = df_nuevo[mask_nuevos]
+            duplicados = (~mask_nuevos).sum()
             df_resultado = pd.concat([df_viejo, df_agregar], ignore_index=True)
 
             hoy = datetime.now().strftime("%Y-%m-%d")
-            temp_path = os.path.join(os.environ.get("TEMP", "/tmp"), f"archivo_actualizado_{hoy}.xlsx")
+            temp_dir = os.environ.get("TEMP", os.environ.get("TMP", "/tmp"))
+            temp_path = os.path.join(temp_dir, f"archivo_actualizado_{hoy}.xlsx")
             df_resultado.to_excel(temp_path, index=False)
+
+            # Evidenziare le righe nuove in verde
+            fila_inicio_nuevos = len(df_viejo) + 2  # +1 header, +1 per 1-index
+            num_nuevos = len(df_agregar)
+
+            if num_nuevos > 0:
+                wb = load_workbook(temp_path)
+                ws = wb.active
+                verde = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+                verde_font = Font(color="006100")
+                for fila in range(fila_inicio_nuevos, fila_inicio_nuevos + num_nuevos):
+                    for celda in ws[fila]:
+                        celda.fill = verde
+                        celda.font = verde_font
+                wb.save(temp_path)
+
             self.file_output = temp_path
 
-            self.btn_descargar.config(state="normal")
+            self.btn_guardar.config(state="normal")
 
             messagebox.showinfo(
                 "Completado",
@@ -202,47 +214,82 @@ class AppAggiornaClienti:
                 f"Duplicados descartados: {duplicados}\n"
                 f"Nuevos agregados: {len(df_agregar)}\n"
                 f"Total final: {len(df_resultado)}\n\n"
-                f"Pulsa 'Guardar Archivo' para guardar."
-            )
+                f"Pulsa 'Guardar Archivo' para guardar.")
 
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
-    def _guardar_archivo(self):
+    def _guardar(self):
         if not self.file_output or not os.path.exists(self.file_output):
-            messagebox.showerror("Error", "No hay archivo para guardar. Ejecuta primero la actualizacion.")
+            messagebox.showerror("Error",
+                                 "No hay archivo para guardar.\nEjecuta primero la actualizacion.")
             return
 
-        # Mostrar pizza animada
+        # Mostrar pizza
         self.pizza_frame.pack(fill="x", padx=20, pady=(4, 10), side="bottom")
         self.pizza.iniciar()
         self.root.update()
 
-        # Esperar 2 segundos para que se vea la pizza, luego guardar
-        self.root.after(2000, self._hacer_descarga)
+        # 2 segundos de pizza, luego dialogo guardar
+        self.root.after(2000, self._hacer_guardado)
 
-    def _hacer_descarga(self):
+    def _hacer_guardado(self):
         hoy = datetime.now().strftime("%Y-%m-%d")
-        default_name = f"archivo_actualizado_{hoy}.xlsx"
+        nombre = f"archivo_actualizado_{hoy}.xlsx"
+
+        # Buscar escritorio del usuario
+        home = os.path.expanduser("~")
+        for carpeta in ["Desktop", "Escritorio"]:
+            candidato = os.path.join(home, carpeta)
+            if os.path.isdir(candidato):
+                inicio = candidato
+                break
+        else:
+            inicio = home
+
+        # Traer ventana al frente
+        self.root.lift()
+        self.root.focus_force()
+        self.root.update()
 
         dest = filedialog.asksaveasfilename(
+            parent=self.root,
             title="Guardar archivo actualizado",
             defaultextension=".xlsx",
-            initialfile=default_name,
-            filetypes=[("Archivos Excel", "*.xlsx")]
-        )
+            initialfile=nombre,
+            initialdir=inicio,
+            filetypes=[("Archivos Excel", "*.xlsx")])
 
         if not dest:
             return
 
         try:
             shutil.copy2(self.file_output, dest)
-            messagebox.showinfo("Guardado", f"Archivo guardado correctamente:\n{os.path.basename(dest)}")
+            self.ultimo_destino = dest
+            carpeta = os.path.dirname(os.path.abspath(dest))
+
+            respuesta = messagebox.askyesno(
+                "Guardado",
+                f"Archivo guardado correctamente en:\n\n"
+                f"{dest}\n\n"
+                f"Quieres abrir la carpeta?")
+
+            if respuesta:
+                if os.name == "nt":
+                    subprocess.Popen(["explorer", "/select,", os.path.normpath(dest)])
+                else:
+                    subprocess.Popen(["xdg-open", carpeta])
+
+        except PermissionError:
+            messagebox.showerror(
+                "Error de permisos",
+                "No se puede guardar en esa ubicacion.\n"
+                "Intenta guardar en otra carpeta (por ejemplo Documentos).")
         except Exception as e:
             messagebox.showerror("Error", f"No se pudo guardar:\n{str(e)}")
 
 
 if __name__ == "__main__":
     root = tk.Tk()
-    AppAggiornaClienti(root)
+    App(root)
     root.mainloop()
